@@ -40,12 +40,10 @@ function ModelView.gradient!(m::MView{Test2}, t)
     @. m.output = m.x
 end
 
-objs = (Test1(1,2,3; inputs=[:x=>(2, :output)]),Test2())
-u₀ = initial(typeof(objs))
-
-MView(zeros(length(u₀)), u₀.x, u₀.c, objs, 1).a .= 1.0
-MView(zeros(length(u₀)), u₀.x, u₀.c, objs, 2).x .= 0.0
-MView(zeros(length(u₀)), u₀.x, u₀.c, objs, 2).y .= 1.0
+# Properties for Test1 are, in order: a_initial,b_initial,c_initial,α,β,γ
+# Properties for Test2 are, in order: x_initial,y_initial
+objs = (Test1(1,0,[1,2,3,4],1,2,3; inputs=[:x=>(2, :output)]),Test2(0,1))
+u₀ = initial(objs)
 
 tspan = (0.0, 10.0)
 

@@ -5,7 +5,19 @@ end
 
 function initial(::Type{objTypes}) where objTypes<:Tuple
     sizes = mapreduce(dims, (a,b)->(values(a).+values(b)), objTypes.parameters)
-    return ODyn(zeros(Float64,sizes[1]), zeros(Float64,sizes[2]))
+    u,c = zeros(Float64,sizes[1]), zeros(Float64,sizes[2])
+    return ODyn(u,c)
+end
+
+function initial(objs::objTypes) where objTypes<:Tuple
+    uc = initial(objTypes)
+    for (i,obj) ∈ enumerate(objs)
+        mv=MView(uc.x, uc.x, uc.c, objs, i)
+        for (fname,_,fslice) ∈ dynamics(typeof(obj))
+            getproperty(mv, fname) .= getproperty(obj, Symbol(String(fname)*"_initial"))
+        end
+    end
+    return uc
 end
 
 

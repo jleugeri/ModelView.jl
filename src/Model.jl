@@ -43,7 +43,7 @@ macro model(def)
     dynamics_infos = Tuple{Symbol, Type}[]
     observable_infos = Tuple{Symbol, Type}[]
 
-    delete_rows = Int[]
+    keep_rows = []
     # parse all lines in the struct definition body
     for (i,row) ∈ enumerate(def.args[3].args)
         # parse block/line starting with @dynamics or @observable
@@ -55,7 +55,8 @@ macro model(def)
             elseif is_observable_macro
                 observable_infos
             else
-                continue
+                # keep all other macros untouched
+                push!(keep_rows, row)
             end
             
             
@@ -66,26 +67,42 @@ macro model(def)
                     if isa(obs_row, Symbol)
                         ftype = Float64
                         push!(infos, (obs_row, ftype))
+                        # for each dynamic variable, keep an initial value
+                        if is_dynamics_macro
+                            push!(keep_rows, :($(Symbol(String(obs_row)*"_initial"))::$(ftype)))
+                        end
                     # parse line @<observable/dynamics> <name>::<type>
                     elseif isa(obs_row, Expr)
                         ftype = eval(obs_row.args[2])
                         @assert ftype <: Union{Number, SVector{N, <:Number} where N} "Type error for field $(obs_row.args[1]): $(ftype) ∉ Union{Number, SVector{N, <:Number} where N}"
                         push!(infos, (obs_row.args[1], ftype))
+                        # for each dynamic variable, keep an initial value
+                        if is_dynamics_macro
+                            push!(keep_rows, :($(Symbol(String(obs_row.args[1])*"_initial"))::$(ftype)))
+                        end
                     end
                 end
             # parse line @<observable/dynamics> <name>
             elseif isa(row.args[3], Symbol)
                 ftype = Float64
                 push!(infos, (row.args[3], Float64))
+                # for each dynamic variable, keep an initial value
+                if is_dynamics_macro
+                    push!(keep_rows, :($(Symbol(String(row.args[3])*"_initial"))::$(ftype)))
+                end
             # parse line @<observable/dynamics> <name>::<type>
             elseif isa(row.args[3], Expr)
                 ftype = eval(row.args[3].args[2])
                 @assert ftype <: Union{Number, SVector{N, <:Number} where N} "Type error for field $(row.args[3].args[1]): $(ftype) ∉ Union{Number, SVector{N, <:Number} where N}"
                 push!(infos, (row.args[3].args[1], ftype))
+                # for each dynamic variable, keep an initial value
+                if is_dynamics_macro
+                    push!(keep_rows, :($(Symbol(String(row.args[3].args[1])*"_initial"))::$(ftype)))
+                end
             end
-            
-            # delete block
-            push!(delete_rows, i)
+        else
+            # keep all other rows untouched
+            push!(keep_rows, row)
         end
     end
     
@@ -93,12 +110,14 @@ macro model(def)
     dynNames,dynTypes = isempty(dynamics_infos) ? ((),()) : zip(dynamics_infos...)
     obsNames,obsTypes = isempty(observable_infos) ? ((),()) : zip(observable_infos...)    
     def.args[2] = :($(structname) <: $(Model){$(dynNames), $(Tuple{dynTypes...}), $(obsNames), $(Tuple{obsTypes...})})
-        
-    # remove all dynamics and observables from the struct, leaving only "parameters"
-    deleteat!(def.args[3].args, delete_rows)
-
+    
     # add row for `_inputs` property
-    push!(def.args[3].args, :(_inputs::Vector{Pair{Symbol, Tuple{Int, Symbol}}}))
+    push!(keep_rows, :(_inputs::Vector{Pair{Symbol, Tuple{Int, Symbol}}}))
+    
+    # replace rows in struct definition with the ones we need to keep
+    def.args[3].args = keep_rows
+    
+    
     return esc(quote
         $(def)
         
